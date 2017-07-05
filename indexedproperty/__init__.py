@@ -40,7 +40,7 @@ Rob Gadd, Highland Technology
 18-Mar-2016
 """
 
-__version__ = '0.1.1'
+__version__ = '0.1.2'
 
 import collections
 from functools import wraps
@@ -202,12 +202,15 @@ class IndexedProperty:
 				self.tdict
 			)
 		
-	# The descriptor itself only needs a getter; all actual operations
+	# This should act as a read-only data descriptor; all actual operations
 	# are performed against the gotten _Trampoline object.
 	def __get__(self, obj, objtype=None):
 		if obj is None:
 			return self
 		return self._trampolinecls(obj)
+		
+	def __set__(self, obj, value):
+		raise AttributeError("can't assign to " + type(self).__name__)
 		
 	def addmethod(self, name, fn):
 		"""Add a method to the trampoline dictionary.
@@ -224,16 +227,19 @@ class IndexedProperty:
 		self.tdict[name] = wrapper
 		
 		# First function to define these things wins.
-		if self.__doc__ is None:
-			self.__doc__ = fn.__doc__
-		if self.__name__ is None:
-			self.__name__ = fn.__name__
+		for attr in ('__module__', '__name__', '__qualname__', '__annotations__', '__doc__'):
+			if not isinstance(getattr(self, attr, None), str):
+				try:
+					a = getattr(fn, attr)
+					setattr(self, attr, a)
+				except AttributeError:
+					pass
 		
 	# The property, as an independent object, will only be asked for attributes 
 	# in the context of class definitions.  That means that we can take any 
 	# undefined attribute request to be a request for a decorator function that 
 	# will push the decorated function up into the Trampoline's class dictionary.
-	def __getattr__(self, attr):
+	def __getattr__(self, attr, default=None):
 		def decorator(fn):
 			self.addmethod(attr, fn)
 			self.updatetrampoline()
