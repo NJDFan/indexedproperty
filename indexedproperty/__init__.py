@@ -51,28 +51,28 @@ from functools import wraps
 
 class Trampoline:
     """
-    Trampolines are thin layers that are returned by the descriptor classes.
-    They are the items that actually receive all the method calls to the 
-    property, such as __getitem__.  Creating new property classes will in
+    Trampolines are thin layers that are returned by the descriptor 
+    classes. They are the items that actually receive all the method calls to 
+    the property, such as __getitem__.  Creating new property classes will in 
     large part be a function of upgrading their Trampoline classes.
     
-    A new trampoline is created each time an IndexProperty is gotten.  They're
+    A new trampoline is created each time an IndexProperty is gotten.  They're 
     pretty disposable.
     
     The base Trampoline supports only the [] operations of __getitem__, 
-    __setitem__, and __delitem__, which it does by calling the getter, setter,
+    __setitem__, and __delitem__, which it does by calling the getter, setter, 
     and deleter functions respectively.  These are provided by the user.
     
-    Class Data Members
-    ------------------
-    iterable_indices - A tuple of base classes that, if the index is a member
-    of, the [] operations will attempt to iterate over rather than just
-    pass along.
+    It is very likely that subclasses should overload modindex or moduserindex. 
+    It is very unlikely that they should overload any of the __*item__ methods.
     
-    Instance Data Members
-    ---------------------
-    obj - The object that the property was bound to.  This is the self reference
-    for the functions.
+    Attributes:
+        iterable_indices (tuple): Base classes that, if the index is a member
+        of, the [] operations will attempt to iterate over rather than just
+        pass along.
+    
+        obj (object): The class instance that the property was bound to.
+        This is the ``self`` reference for the functions.
     """
     
     iterable_indices = ()
@@ -83,21 +83,48 @@ class Trampoline:
     def moduserindex(self, index):
         """Modify or validate the user index.
         
-        This is the version of the index that may or may not be iterable,
-        it's just what was in the [].
+        Overload this to modify the index before we attempt to iterate on it.
+        
+        Arguments:
+            index: The thing that was between the ``[]`` markers with no
+                modification or ``iterable_indices`` checking.
+        
+        Returns:
+            A modified index.  The base version performs no modification or
+            validation on index.
         """
         return index
     
     def modindex(self, index):
         """Modify or validate the single index.
         
-        This is the version of the index that will be passed to the getter,
-        setter, or deleter functions.  If the user index was deemed iterable,
-        this is one value from it.
+        Overload this to modify index values that have already been deemed
+        non-iterable, or that are one of the values from an iterable index.
+        
+        Arguments:
+            index: One index that will be passed to the getter, setter, or
+                deleter functions.
+                
+        Returns:
+            A modified index.  The base version performs no modification or
+            validation on index.
         """
         return index
     
     def __getitem__(self, index):
+        """Call the registered getter function.
+        
+        Arguments:
+            index: The user index from [].  May be iterable.
+            
+        Returns:
+            getter(self.obj, index) if index was not in self.iterable_indices,
+            or a list of one value per index if it was.
+            
+        Raises:
+            NotImplementedError: No getter was defined for the property
+        """
+        
         try:
             fget = self.getter
         except AttributeError:
@@ -109,6 +136,28 @@ class Trampoline:
         return fget(self.modindex(index))
         
     def __setitem__(self, index, value):
+        """Call the registered setter function.
+        
+        Arguments:
+            index: The user index from [].  May be iterable.
+            value: The value to set.  If index is iterable, value may also be
+                a non-string iterable.  In this case, calls are paired off as
+                setter(self.obj, index[0], value[0]), 
+                setter(self.obj, index[1], value[1])...
+                
+                Doing this requires that the value iterable be the same length
+                as the index iterable.
+                
+                If the index is iterable and the value is not, then the
+                calls are setter(self.obj, index[0], value), 
+                setter(self.obj, index[1], value)...
+                
+        Raises:
+            ValueError: An iterable index was provided, with an iterable value
+                of different length.
+            NotImplementedError: No getter was defined for the property
+
+        """
         try:
             fset = self.setter
         except AttributeError:
@@ -134,6 +183,25 @@ class Trampoline:
             fset(self.modindex(index), value)
         
     def __delitem__(self, index):
+        """Call the registered deleter function.
+        
+        Arguments:
+            index: The user index from [].  May be iterable.
+            value: The value to set.  If index is iterable, value may also be
+                a non-string iterable.  In this case, calls are paired off as
+                setter(self.obj, index[0], value[0]), 
+                setter(self.obj, index[1], value[1])...
+                
+                Doing this requires that the value iterable be the same length
+                as the index iterable.
+                
+                If the index is iterable and the value is not, then the
+                calls are setter(self.obj, index[0], value), 
+                setter(self.obj, index[1], value)...
+                
+        Raises:
+            NotImplementedError: No getter was defined for the property
+        """
         try:
             fdel = self.deleter
         except AttributeError:
@@ -160,33 +228,53 @@ class IndexedProperty:
         @IndexedProperty()
     or the somewhat more convenient functional decorator is
         @indexedproperty
-    
     """
     
     # This is the class-wide base class for the Trampoline.  Each instance of
     # IndexedProperty will wind up holding it's own local subclass of this
     # base class.
-    
     _Trampoline = Trampoline
+    
+    # addmethod will not allow you to create a method from illegalmethods.
     illegalmethods = ('__getitem__', '__setitem__', '__delitem__')
     
-    def __init__(self, getter=None, name=None, doc=None, **kwargs):
+    def __init__(self, getter=None, name=None, doc=None, *, tdict=None, **kwargs):
+        """
+        Create a new IndexedProperty.
+        
+        This will most often be called with no arguments as IndexedProperty(),
+        allowing the returned object to be used as a decorator.
+        
+        Arguments:
+            getter (function): getter(self, idx) -> value
+            name (str): Name of the descriptor and the trampoline class.
+            doc (str): Docstring for the descriptor and trampoline class.
+            tdict (dict): Elements for the class dictionary of trampoline
+                classes.  This tends to be used only by subclasses calling
+                super().__init__()
+            kwargs (dict): { method_name: function } dict to be passed to
+                addmethod.
+        """
+        
+        # The tdict is the dictionary that will form the class dictionary for
+        # _Trampoline objects.
         self.tdict = {}
+        if tdict is not None:
+            self.tdict.update(tdict)
         self.__doc__ = doc
         self.__name__ = name
-        self(getter=getter, name=name, doc=doc, **kwargs)
-        
-    def __repr__(self):
-        return type(self).__name__ + '()'
-        
-    def __call__(self, getter=None, name=None, doc=None, **kwargs):
-        """Functional form allows the class itself to be used as a decorator."""
-        if name is not None: self.__name__ = name
-        if doc is not None: self.__doc__ = doc
         if getter is not None:
             self.addmethod('getter', getter)
         for k, v in kwargs.items():
             self.addmethod(k, v)
+        self.updatetrampoline()
+        
+    def __repr__(self):
+        return type(self).__name__ + '()'
+        
+    def __call__(self, getter):
+        """Functional form allows the class itself to be used as a decorator."""
+        self.addmethod('getter', getter)
         self.updatetrampoline()
         return self
     
@@ -202,9 +290,8 @@ class IndexedProperty:
                 self.tdict
             )
         
-    # This should act as a read-only data descriptor; all actual operations
-    # are performed against the gotten _Trampoline object.
     def __get__(self, obj, objtype=None):
+        """Return a Trampoline as a read-only data descriptor."""
         if obj is None:
             return self
         return self._trampolinecls(obj)
@@ -215,8 +302,9 @@ class IndexedProperty:
     def addmethod(self, name, fn):
         """Add a method to the trampoline dictionary.
         
-        The first (self) argument of the method refers to an instance of the
-        class in which the property exists, not the property itself.
+        Arguments:
+            name (str): Name of the new method.
+            fn (function): Code of the new method.
         """
         if name in self.illegalmethods:
             raise AttributeError("can't define " + name + " on " + type(self).__name__)
@@ -228,18 +316,53 @@ class IndexedProperty:
         
         # First function to define these things wins.
         for attr in ('__module__', '__name__', '__qualname__', '__annotations__', '__doc__'):
-            if not isinstance(getattr(self, attr, None), str):
-                try:
-                    a = getattr(fn, attr)
-                    setattr(self, attr, a)
-                except AttributeError:
-                    pass
+            try:
+                self._updatedoc(attr, getattr(fn, attr))
+            except AttributeError:
+                pass
+                
+    def _updatedoc(self, attr, value):
+        """Update documentation properties of the instance.
         
-    # The property, as an independent object, will only be asked for attributes 
-    # in the context of class definitions.  That means that we can take any 
-    # undefined attribute request to be a request for a decorator function that 
-    # will push the decorated function up into the Trampoline's class dictionary.
-    def __getattr__(self, attr, default=None):
+        Subclasses may choose to modify the value en route, but should still
+        call this method eventually.
+        
+        Arguments:
+            attr (str): An attribute name such as '__name__' or '__doc__'
+            value: The value for the attribute.
+        """
+        current = self.__dict__.get(attr, None)
+        if current is None:
+            setattr(self, attr, value)
+    
+    def __getattr__(self, attr):
+        """Return a method decorator that adds an arbitrarily named function
+        into the Trampoline class dictionary.
+        
+        Because an instance of IndexedProperty, will generally only be asked 
+        for attributes in the context of class definitions.  That means that we 
+        can take any undefined attribute request to be a request for a 
+        decorator function that will push the decorated function up into the 
+        Trampoline's class dictionary, allowing usages such as::
+        
+            >>> class C:
+            ...     _letters = 'abcdefgh'
+            ...
+            ...     @indexedproperty
+            ...     def letter(self, key):
+            ...         return self._letters[key]
+            ...
+            ...     @letter.upper
+            ...     def letter(self, key):
+            ...         return self._letters[key].upper()
+            ...
+            >>> x = C()
+            >>> x.letter[3]
+            'd'
+            >>> x.letter.upper(3)
+            'D'
+        """
+        
         def decorator(fn):
             self.addmethod(attr, fn)
             self.updatetrampoline()
@@ -274,8 +397,8 @@ class ContainerProperty(IndexedProperty):
     
     A KeyError will be raised if any key is not in the base container.
     
-    Iteration and length are attempted off the base container, but may fail
-    if the base container doesn't support them.  If iteration is support, items
+    Iteration and length are attempted off the base container, but may fail if 
+    the base container doesn't support them.  If iteration is supported, items 
     will be an iterator over (key, getter(key)) pairs.
     
     ContainerProperty objects can be created with the @containerproperty
@@ -301,7 +424,7 @@ class ContainerProperty(IndexedProperty):
 
         def modindex(self, index):
             """Validate against the base collection."""
-            if not index in self.base:
+            if index not in self.base:
                 raise KeyError(index)
             return index
         
@@ -319,15 +442,48 @@ class ContainerProperty(IndexedProperty):
     # When we __init__ the descriptor, we have to add the base to the tdict.
     # and call updatetrampoline() when we're done modifying the tdict.
     
-    def __init__(self, base, getter=None, **kwargs):
-        super().__init__(getter, **kwargs)
+    def __init__(self, base, document_indices=True, getter=None, **kwargs):
+        """Create the ContainerProperty
+        
+        Arguments:
+            base (collection): An object supporting __contains__, such as a
+                list, dict, set, etc.
+                
+            document_indices (bool): If True (the default) add information
+                about the available indices to the docstring.
+        """
+        self.document_indices = document_indices
         
         # The trampoline needs access to the base object, so we put it into
         # the class dictionary.
-        self.tdict['base'] = base
-        # Having modified the class dictionary, we call updatetrampoline to
-        # update the actual class.
-        self.updatetrampoline()
+        super().__init__(getter=getter, tdict={'base': base}, **kwargs)
+        
+    def _updatedoc(self, attr, value):
+        """Try to append the keys to __doc__"""
+        
+        if attr == '__doc__' and self.document_indices:
+            MAXLEN = 8
+            
+            try:
+                # Try to pull one too many items off the base collection.
+                items = [repr(x) for _, x in zip(range(MAXLEN+1), self.tdict['base'])]
+                
+                # If we have too many, we need to truncate the list.  The
+                # ellipsis itself counts as an item.
+                if len(items) > MAXLEN:
+                    del items[MAXLEN-1:]
+                    items.append('...')
+                print(items)
+                itemstr = 'Indices are from ' + ', '.join(items)
+                if value:
+                    value = value + '\n' + itemstr
+                else:
+                    value = itemstr
+            except TypeError:
+                # No __iter__ on the base.
+                pass
+    
+        super()._updatedoc(attr, value)
 
 class RangeProperty(IndexedProperty):
     """An IndexedProperty whose indices are a finite range of integers.
@@ -439,15 +595,40 @@ class RangeProperty(IndexedProperty):
     # so we need to pass them into the class dictionary and recreate the
     # internal Trampoline class.
     
-    def __init__(self, start, stop=None, getter=None, **kwargs):
-        super().__init__(getter, **kwargs)
+    def __init__(self, start, stop=None, document_indices=True, getter=None, **kwargs):
+        """Create the RangeProperty.
+        
+        Arguments:
+            start (int): If stop is None, the range is 0:start.  Otherwise
+                the range is start:stop.  This is the same as the built-in
+                range function.
+            stop (int): Stop point of the range
+            
+            document_indices (bool): If True (the default) add information
+                about the available indices to the docstring.
+        """
+        
+        self._document_indices = document_indices
+        
         if stop is None:
             start, stop = 0, start
-            
         if stop < start:
             raise ValueError("Start must be less than or equal to stop.")
-        self.tdict.update(start = start, stop = stop)
+        tdict = {'start' : start, 'stop' : stop}
+            
+        super().__init__(getter, tdict=tdict, **kwargs)
         self.updatetrampoline()
+        
+    def _updatedoc(self, attr, value):
+        """Append the range to __doc__"""
+        
+        if attr == '__doc__' and self._document_indices:
+            itemstr = 'Index range is {0[start]}:{0[stop]}'.format(self.tdict)
+            if value:
+                value += '\n' + itemstr
+            else:
+                value = itemstr
+        super()._updatedoc(attr, value)
 
 #######################################################################
 # Descriptors
@@ -470,9 +651,7 @@ def containerproperty(base):
     @containerproperty(('Anna', 'Basil', 'Cesar'))
     """
     
-    def inner(fget=None):
-        return ContainerProperty(base, fget)
-    return inner
+    return ContainerProperty(base)
 
 def rangeproperty(a, b=None):
     """Functional form to create RangeProperty objects.
@@ -485,6 +664,4 @@ def rangeproperty(a, b=None):
     if b is None:   start, stop = 0, a
     else:           start, stop = a, b
     
-    def inner(fget=None):
-        return RangeProperty(start, stop, fget)
-    return inner
+    return RangeProperty(start, stop)
