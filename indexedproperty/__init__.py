@@ -532,6 +532,36 @@ class RangeProperty(IndexedProperty):
     class _Trampoline(Trampoline):
         iterable_indices = (list, tuple, range)
         
+        def _negativeindex(self, idx):
+            """Flip negative indices as appropriate.
+            
+            If the range of this Trampoline is entirely positive, then negative
+            indices are treated as they are for lists; they represent an offset
+            from the end of the list.
+            
+            If the Trampoline range does legitimately include negative numbers
+            then pass the negative index back unaltered.
+            """
+            
+            # Don't need an explicit check for self.stop, as at initialization
+            # time we enforce self.start <= self.stop
+            if idx > 0 or self.start < 0:
+                return idx
+            else:
+                return self.stop + idx
+        
+        def _boundindex(self, idx):
+            """For slices (but not for single indices), clip indices to the
+            bounds of the range."""
+            
+            idx = self._negativeindex(idx)
+            if idx < self.start:
+                return self.start
+            elif idx > self.stop:
+                return self.stop
+            else:
+                return idx
+        
         # By hooking moduserindex, we can intercept a slice (which will often
         # have lots of Nones in it) and turn it into a concrete range object,
         # which can be iterated.
@@ -539,16 +569,12 @@ class RangeProperty(IndexedProperty):
             """Turn slices into ranges, pass anything else along"""
             if isinstance(index, slice):
                 start, stop, step = index.start, index.stop, index.step
-            
-                # Offset the entire slice down to a start index of 0 so we can
-                # cook it using indices.
-                base = self.start
-                if start is not None: start -= base
-                if stop is not None: stop -= base
                 
-                reflen = self.stop - base
-                s = slice(start, stop, step).indices(reflen)
-                return range(s[0]+base, s[1]+base, s[2])
+                start = self.start if start is None else self._boundindex(start)
+                stop = self.stop if stop is None else self._boundindex(stop)
+                if step is None:
+                    step = 1
+                return range(start, stop, step)
             return index
         
         # Now that we're down to single integer indices we can handle the
@@ -558,11 +584,10 @@ class RangeProperty(IndexedProperty):
             """Ensure proper handling of negative indices and validate.
             
             Negative indices should wrap around, unless the range itself 
-            support negative indices (can't imagine why it would).
+            supports negative indices (can't imagine why it would).
             """
-            if index < 0 and self.start >= 0:
-                index = self.stop + index
-            if index < self.start or index >= self.stop:
+            index = self._boundindex(index)
+            if not self.start <= index < self.stop:
                 raise IndexError(type(self).__name__ + " index out of range")
             return index
         
