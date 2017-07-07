@@ -56,5 +56,6 @@ setup(
     # What does your project relate to?
     keywords='properties',
 
-    packages=['indexedproperty']
+    packages=['indexedproperty'],
+    test_suite='indexedproperty.test'
 )

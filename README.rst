@@ -121,33 +121,108 @@ is an instance of one of then, then rather than pass the key on to the
 getter/setter/deleter functions directly, it will be iterated into successive
 calls.  So if x.iterable_indices = (list, tuple)
 
-+--------------------------+---------------------------------+
-|Doing                     | Does                            |
-+==========================+=================================+
-| x[5]                     | return x.getter(self, 5)        |
-+--------------------------+---------------------------------+
-| x[5,10,15]               | return [x.getter(self, 5),      |
-|                          | x.getter(self, 10),             |
-|                          | x.getter(self, 15)]             |
-+--------------------------+---------------------------------+
-| x[5] = 'Larry'           | x.setter(self, 5, 'Larry')      |
-+--------------------------+---------------------------------+
-| x[5,10,15] = 'Larry'     | x.setter(self, 5, 'Larry')      |
-|                          | x.setter(self, 10, 'Larry')     |
-|                          | x.setter(self, 15, 'Larry')     |
-+--------------------------+---------------------------------+
-| x[5,10,15] = ("Larry"    | x.setter(self, 5, "Larry")      |
-|               "can't",   | x.setter(self, 10, "can't")     |
-|               "spel")    | x.setter(self, 15, "spel")      |
-+--------------------------+---------------------------------+
++-------------------------------+---------------------------------+
+|Doing                          | Does                            |
++===============================+=================================+
+| ::                            | ::                              |
+|                               |                                 |
+|   x[5]                        |   return x.getter(self, 5)      |
++-------------------------------+---------------------------------+
+| ::                            | ::                              |
+|                               |                                 | 
+|   x[5,10,15]                  |   return [                      |
+|                               |       x.getter(self, 5),        |
+|                               |       x.getter(self, 10),       |
+|                               |       x.getter(self, 15)        |
+|                               |   ]                             |
++-------------------------------+---------------------------------+
+| ::                            | ::                              |
+|                               |                                 | 
+|   x[5] = 'Larry'              |   x.setter(self, 5, 'Larry')    |
++-------------------------------+---------------------------------+
+| ::                            | ::                              |
+|                               |                                 | 
+|   x[5,10,15] = 'Larry'        |   x.setter(self, 5, 'Larry')    |
+|                               |   x.setter(self, 10, 'Larry')   |
+|                               |   x.setter(self, 15, 'Larry')   |
++-------------------------------+---------------------------------+
+| ::                            | ::                              |
+|                               |                                 |
+|   x[5,10,15] = [              |     x.setter(self, 5, 'Larry')  | 
+|       "Larry", "can't",       |     x.setter(self, 10, "can't") |
+|       "spel"                  |     x.setter(self, 15, 'spel')  |
+|   ]                           |                                 |
++-------------------------------+---------------------------------+
 
 The setter broadcasting concept is taken from numpy; you can assign either a
 single value or an iterable of values that is the same length as the list of keys.
 Strings are treated as single values, and non-string iterables of a different
 length than the key list raise ValueError.
 
-Some Use Cases
-==============
+Subclasses
+==========
+
+ContainerProperty
+-----------------
+
+ContainerProperty is an IndexedProperty linked to a *collections.abc.Container*,
+which is anything with a *__contains__* method (i.e. that supports the ``x in y``
+construction).  ContainerProperty automatically checks to ensure that the
+key provided on accesses is in the container and raises KeyError otherwise.  This
+saves having to check explicitly in the accessor code.
+
+ContainerProperty also supports broadcasting over list and tuple keys.
+
+In almost every case, the container will actually be a *collections.abc.Collection*,
+meaning that it also supports *len()* and *iter()*.  Expecting this, the
+ContainerProperty also provides:
+
+* ``len(prop)`` : Returns the number of keys in the collection.
+* ``iter(prop)`` : Iterates over the keys in the collection.
+* ``prop.items()`` : Iterates over (key, value) pairs in the collection.
+
+In this way, a ContainerProperty implements much of the functionality of a ``dict``.
+
+.. code:: python
+
+    >>> import indexedproperty as ix
+    >>> class FoodRestrictions:
+    ...     _foodlist = ['apples', 'bananas', 'pears']
+    ... 
+    ...     def __init__(self):
+    ...         self.fooddict = { k : [] for k in self._foodlist }
+    ... 
+    ...     @ix.containerproperty(_foodlist)
+    ...     def lunch(self, idx):
+    ...         return self.fooddict[idx]
+    ... 
+    ...     @lunch.setter
+    ...     def lunch(self, idx, value):
+    ...         self.fooddict[idx] = value
+    ... 
+    >>> x = FoodRestrictions()
+    >>> x.lunch['apples'] = 'I have an apple'
+    >>> x.lunch['bread'] = 'But I want bread'
+    Traceback (most recent call last):
+    KeyError: 'bread'
+    >>> x.lunch['pears'] = 5
+    >>> x.lunch['apples', 'pears']
+    ['I have an apple', 5]
+    >>> sorted(x.lunch)
+    ['apples', 'bananas', 'pears']
+
+RangeProperty
+-------------
+
+RangeProperty is an IndexedProperty linked to a range of integer values.  Much
+like a ``list``, keys support slicing and negative indices.  Also like a list,
+iteration is considered to be over values rather than over keys.  It provides:
+    
+* ``len(prop)`` : Returns the number of elements in the property
+* ``iter(prop)`` : Iterates over the values in the property from start to stop.
+* ``reverse(prop)`` : Allows the ``reversed`` function to iterate from stop to start.
+* ``prop.items()`` : Iterates over (index, value) pairs from start to stop.
+* ``prop.range`` : A read-only range object representing the range of the property.
 
 Here we have both *rangeproperty* in it's natural habitat, and an utterly
 gratuitious use of assigning additional functions to the property:
@@ -210,37 +285,6 @@ gratuitious use of assigning additional functions to the property:
     29
     >>> (list(x.bit))[::-1] == list(reversed(x.bit))
     True
-
-Here is *containerproperty* providing both access restriction and broadcasting
-functionality to an internal list of properties.
-
-.. code:: python
-
-    >>> import indexedproperty as ix
-    >>> class FoodRestrictions:
-    ...     _foodlist = ['apples', 'bananas', 'pears']
-    ... 
-    ...     def __init__(self):
-    ...         self.fooddict = { k : [] for k in self._foodlist }
-    ... 
-    ...     @ix.containerproperty(_foodlist)
-    ...     def lunch(self, idx):
-    ...         return self.fooddict[idx]
-    ... 
-    ...     @lunch.setter
-    ...     def lunch(self, idx, value):
-    ...         self.fooddict[idx] = value
-    ... 
-    >>> x = FoodRestrictions()
-    >>> x.lunch['apples'] = 'I have an apple'
-    >>> x.lunch['bread'] = 'But I want bread'
-    Traceback (most recent call last):
-    KeyError: 'bread'
-    >>> x.lunch['pears'] = 5
-    >>> x.lunch['apples', 'pears']
-    ['I have an apple', 5]
-    >>> sorted(x.lunch)
-    ['apples', 'bananas', 'pears']
     
 What's Under The Hood
 =====================

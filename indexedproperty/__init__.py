@@ -473,7 +473,6 @@ class ContainerProperty(IndexedProperty):
                 if len(items) > MAXLEN:
                     del items[MAXLEN-1:]
                     items.append('...')
-                print(items)
                 itemstr = 'Indices are from ' + ', '.join(items)
                 if value:
                     value = value + '\n' + itemstr
