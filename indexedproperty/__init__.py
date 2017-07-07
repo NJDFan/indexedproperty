@@ -36,11 +36,11 @@ The classes defined here are mostly useful for subclassing new IndexedProperty
 style objects.  For actual use you will almost certainly just want to use
 the factory function forms as decorators, the same as you would with `property`.
 
-Rob Gadd, Highland Technology
-18-Mar-2016
+:Author: Rob Gaddi, Highland Technology
+:Date: 07-Jul-2017
 """
 
-__version__ = '0.1.2'
+__version__ = '0.1.3'
 
 import collections
 from functools import wraps
