@@ -545,7 +545,7 @@ class RangeProperty(IndexedProperty):
             
             # Don't need an explicit check for self.stop, as at initialization
             # time we enforce self.start <= self.stop
-            if idx > 0 or self.start < 0:
+            if idx >= 0 or self.start < 0:
                 return idx
             else:
                 return self.stop + idx
@@ -574,7 +574,8 @@ class RangeProperty(IndexedProperty):
                 stop = self.stop if stop is None else self._boundindex(stop)
                 if step is None:
                     step = 1
-                return range(start, stop, step)
+                ret = range(start, stop, step)
+                return ret
             return index
         
         # Now that we're down to single integer indices we can handle the

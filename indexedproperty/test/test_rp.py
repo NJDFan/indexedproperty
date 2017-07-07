@@ -82,6 +82,19 @@ class RPTest(unittest.TestCase):
         )
         self.assertStats(0, 0, 8)
         
+    def test_slicing(self):
+        self.assertListEqual(self.tgt.topten[:4], [10, 9, 8])
+        self.assertListEqual(self.tgt.topten[1:4], [10, 9, 8])
+        self.assertListEqual(self.tgt.topten[2:4], [9, 8])
+        self.assertListEqual(self.tgt.topten[-1:4], [])
+        
+        self.assertListEqual(self.tgt.topten[-5:], [5, 4, 3, 2, 1])
+        self.assertListEqual(self.tgt.topten[-5:-1], [5, 4, 3, 2])
+        self.assertListEqual(self.tgt.topten[-5:9], [5, 4, 3])
+        
+        self.assertListEqual(self.tgt.topten[2:10], [9, 8, 7, 6, 5, 4, 3, 2])
+        self.assertListEqual(self.tgt.topten[2:10:3], [9, 6, 3])
+        
     def test_Doc(self):
         self.assertEqual(
             self.tgt.topten.__doc__,
