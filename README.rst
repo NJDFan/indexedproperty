@@ -3,8 +3,8 @@ Indexed Properties
 ==================
 
 :Author: Rob Gaddi, Highland Technology
-:Date: 06-Jul-2017
-:Version: 0.1.3
+:Date: 19-Sep-2017
+:Version: 0.1.4
 
 Overview
 ========

@@ -37,10 +37,10 @@ style objects.  For actual use you will almost certainly just want to use
 the factory function forms as decorators, the same as you would with `property`.
 
 :Author: Rob Gaddi, Highland Technology
-:Date: 07-Jul-2017
+:Date: 19-Sep-2017
 """
 
-__version__ = '0.1.3'
+__version__ = '0.1.4'
 
 import collections
 from functools import wraps
@@ -442,7 +442,7 @@ class ContainerProperty(IndexedProperty):
     # When we __init__ the descriptor, we have to add the base to the tdict.
     # and call updatetrampoline() when we're done modifying the tdict.
     
-    def __init__(self, base, document_indices=True, getter=None, **kwargs):
+    def __init__(self, base, getter=None, document_indices=True, **kwargs):
         """Create the ContainerProperty
         
         Arguments:
@@ -620,7 +620,7 @@ class RangeProperty(IndexedProperty):
     # so we need to pass them into the class dictionary and recreate the
     # internal Trampoline class.
     
-    def __init__(self, start, stop=None, document_indices=True, getter=None, **kwargs):
+    def __init__(self, start, stop=None, getter=None, document_indices=True, **kwargs):
         """Create the RangeProperty.
         
         Arguments:
