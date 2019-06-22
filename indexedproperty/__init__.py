@@ -238,7 +238,7 @@ class IndexedProperty:
     # addmethod will not allow you to create a method from illegalmethods.
     illegalmethods = ('__getitem__', '__setitem__', '__delitem__')
     
-    def __init__(self, getter=None, name=None, doc=None, *, tdict=None, **kwargs):
+    def __init__(self, getter=None, name=None, doc=None, tdict=None, **kwargs):
         """
         Create a new IndexedProperty.
         
